@@ -2,6 +2,11 @@ from functools import cached_property
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qsl, urlparse
+import re
+import redis
+import uuid
+
+r = redis.Redis(host='localhost', port=6379, db=0)
 
 # Código basado en:
 # https://realpython.com/python-http-server/
@@ -30,24 +35,56 @@ class WebRequestHandler(BaseHTTPRequestHandler):
     @cached_property
     def cookies(self):
         return SimpleCookie(self.headers.get("Cookie"))
+    
 
     def do_GET(self):
+        method = self.get_method(self.url.path)
+        if method:
+            method_name, dict_params = method
+            method = getattr(self, method_name)
+            method(**dict_params)
+            return
+        else:
+            self.send_error(404, "Not Found")
+
+
+    def get_book(self, book_id):
+        book_page = r.get(book_id)
+        if book_page:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            response = f"""
+            {book_page.decode()}
+        <p>  Ruta: {self.path}            </p>
+        <p>  URL: {self.url}              </p>
+        <p>  HEADERS: {self.headers}      </p>
+"""
+            self.wfile.write(response.encode("utf-8"))
+        else:
+            self.send_error(404, "Not Found")
+
+    def get_index(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.end_headers()
-        self.wfile.write(self.get_response().encode("utf-8"))
+        with open('html/index.html') as f:
+            response = f.read()
+        self.wfile.write(response.encode("utf-8"))
+    
+    def get_method(self, path):
+        for pattern, method in mapping:
+            match = re.match(pattern, path)
+            if match:
+                return (method, match.groupdict())
 
-    def get_response(self):
-        return f"""
-    <h1> Hola Web </h1>
-    <p>  {self.path}         </p>
-    <p>  {self.headers}      </p>
-    <p>  {self.cookies}      </p>
-    <p>  {self.query_data}   </p>
-"""
 
+mapping = [
+            (r'^/books/(?P<book_id>\d+)$', 'get_book'),
+            (r'^/$', 'get_index')
+            ]
 
 if __name__ == "__main__":
     print("Server starting...")
-    server = HTTPServer(("0.0.0.0", 8000), WebRequestHandler)
+    server = HTTPServer(("0.0.0.0", 80), WebRequestHandler)
     server.serve_forever()
