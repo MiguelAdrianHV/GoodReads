@@ -5,6 +5,7 @@ from urllib.parse import parse_qsl, urlparse
 import re
 import redis
 import uuid
+import os
 
 r = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -83,11 +84,11 @@ class WebRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             response = f"""
             {book_page.decode()}
-        <p>  Ruta: {self.path}            </p>
-        <p>  URL: {self.url}              </p>
-        <p>  HEADERS: {self.headers}      </p>
-        <p>  SESSION: {session_id}      </p>
-        <p>  Recomendación: {book_recomendation}      </p>
+        <p>  <strong> Ruta: </strong> {self.path}            </p>
+        <p>  <strong> URL: </strong> {self.url}              </p>
+        <p>  <strong> Headers: </strong> {self.headers}      </p>
+        <p>  <strong> Token: </strong> {session_id}      </p>
+        <p>  <strong> Recomendación: </strong> {book_recomendation}      </p>
 """
             self.wfile.write(response.encode("utf-8"))
         else:
@@ -108,6 +109,20 @@ class WebRequestHandler(BaseHTTPRequestHandler):
             match = re.match(pattern, path)
             if match:
                 return (method, match.groupdict())
+    
+def load_folder(path):
+    files = os.listdir(path)
+    print(files)
+    for file in files:
+        match = re.match(r'^book(\d+).html$', file)
+        if match:
+            with open(path + file) as f:
+                html = f.read()
+                r.set(match.group(1), html)
+            print(match.group(0), match.group(1))
+
+
+load_folder('html/books/')
 
 
 mapping = [
