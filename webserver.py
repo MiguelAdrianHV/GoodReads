@@ -99,6 +99,11 @@ class WebRequestHandler(BaseHTTPRequestHandler):
         session_id = self.get_book_session()
         book_recomendation = self.get_book_recomendation(session_id, book_id)
         book_page = r.get(book_id)
+        book_recomendation_name = book_recomendation
+        if book_recomendation:
+            book_recomendation_page = r.get(book_recomendation)
+            book_recomendation_name = self.single_search("nombre_libro", book_recomendation_page.decode())
+
         if book_page:
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -113,11 +118,8 @@ class WebRequestHandler(BaseHTTPRequestHandler):
         </button>
     </a>
             {book_page.decode()}
-        <p>  <strong> Ruta: </strong> {self.path}            </p>
-        <p>  <strong> URL: </strong> {self.url}              </p>
-        <p>  <strong> Headers: </strong> {self.headers}      </p>
-        <p>  <strong> Token: </strong> {session_id}      </p>
-        <p>  <strong> Recomendación: </strong> {book_recomendation}      </p>
+        <p>  <strong> Recomendación: </strong> <br> <a href="/books/{book_recomendation if book_recomendation else ".."}"> {book_recomendation_name}</a>      </p>
+        <p style="text-align: right" >  <strong> Token: </strong> {session_id}      </p>
 """
             self.wfile.write(response.encode("utf-8"))
         else:
