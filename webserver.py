@@ -2,6 +2,8 @@ from functools import cached_property
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qs
+from html.parser import HTMLParser
 import re
 import redis
 import uuid
@@ -14,6 +16,26 @@ r = redis.Redis(host='localhost', port=6379, db=0)
 # https://docs.python.org/3/library/http.server.html
 # https://docs.python.org/3/library/http.cookies.html
 
+class MyHTMLParser(HTMLParser):
+    def __init__(self, tag_id):
+        super().__init__()
+        self.tag_id = tag_id
+        self.in_target_tag = False
+        self.data = ""
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "p":
+            for name, value in attrs:
+                if name == "id" and value == self.tag_id:
+                    self.in_target_tag = True
+
+    def handle_data(self, data):
+        if self.in_target_tag:
+            self.data += data
+
+    def handle_endtag(self, tag):
+        if self.in_target_tag and tag == "p":
+            self.in_target_tag = False
 
 class WebRequestHandler(BaseHTTPRequestHandler):
     @cached_property
@@ -83,6 +105,13 @@ class WebRequestHandler(BaseHTTPRequestHandler):
             self.set_book_cookie(session_id)
             self.end_headers()
             response = f"""
+    <h1>La Biblioteca</h1>       
+        
+    <a href="/">
+        <button>
+            Volver
+        </button>
+    </a>
             {book_page.decode()}
         <p>  <strong> Ruta: </strong> {self.path}            </p>
         <p>  <strong> URL: </strong> {self.url}              </p>
@@ -103,7 +132,63 @@ class WebRequestHandler(BaseHTTPRequestHandler):
         with open('html/index.html') as f:
             response = f.read()
         self.wfile.write(response.encode("utf-8"))
+
+    def get_search(self):
+        session_id = self.get_book_session()
+        book_results = self.book_search(self.url.query)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.set_book_cookie(session_id)
+        self.end_headers()
+        with open('html/search.html') as f:
+            response = f"""
+            {f.read()}
+            <p> {book_results} </p>
+            """
+        self.wfile.write(response.encode("utf-8"))
     
+    def book_search(self, query):
+        query_params = parse_qs(query)
+        name = query_params.get('search_name', [''])[0]
+        autor = query_params.get('search_autor', [''])[0]
+        description = query_params.get('search_description', [''])[0]
+        book_list = []
+        book_final_string = ""
+    
+        for book in range(1,5):
+            book_page = r.get(book)
+            book_string = book_page.decode()
+            book_flag = True
+    
+            if name:
+                name_value = self.single_search("nombre_libro", book_string)
+                if not name in name_value:
+                    book_flag = False
+
+            if autor:
+                autor_value = self.single_search("nombre_autor", book_string)
+                if not autor in autor_value:
+                    book_flag = False
+
+            if description:
+                description_value = self.single_search("description", book_string)
+                if not description in description_value:
+                    book_flag = False
+            
+            if not name and not autor and not description:
+                book_flag = False
+
+            if book_flag:
+                book_final_string += book_string
+
+        return book_final_string
+    
+    def single_search(self, htmlid, book_string):
+        parser = MyHTMLParser(htmlid)
+        parser.feed(book_string)
+        nombre_value = parser.data.strip()
+        return nombre_value
+
     def get_method(self, path):
         for pattern, method in mapping:
             match = re.match(pattern, path)
@@ -127,7 +212,8 @@ load_folder('html/books/')
 
 mapping = [
             (r'^/books/(?P<book_id>\d+)$', 'get_book'),
-            (r'^/$', 'get_index')
+            (r'^/$', 'get_index'),
+            (r'^/search$', 'get_search')
             ]
 
 if __name__ == "__main__":
